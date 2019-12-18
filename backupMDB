@@ -1,0 +1,146 @@
+#!/bin/sh
+#
+# Created By SangJea.Park
+# IscreamEdu DBA Part
+# Date : 2019-12-05
+#
+# Usage :
+# runDiv Variable Choice: [prod|dev]
+# prod is Fixed Backup Schedule but Dev Select Backup Division.
+# Use the prod option when applying to production environments.
+#
+# runDiv [Dev] full Backup :
+# ./backupMDB full
+#
+# runDiv [Dev] Incremental Backup :
+# ./backupMDB inc baseDirNumber
+# ex) Full Backup Base Incremental
+# ./backupMDB inc 0
+#
+# Restore Usage:
+# Important.
+# Data Directory And binary Log Directory Cleaning.
+# Full Backup Restore:
+# 1. mariabackup --defaults-file=$Configdir --prepare --target-dir=$fullbackupdir
+# 2. mariabackup --defaults-file=$Configdir --copy-back --target-dir=$fullbackupdir
+#
+# Incremental Backup Restore:
+# 1. mariabackup --defaults-file=$Configdir --prepare --target-dir=$fullbackupdir
+# 2. mariabackup --defaults-file=$Configdir --prepare --target-dir=$fullbackupdir --incremental-dir=$incbakcupdir
+# 3. mariabackup --defaults-file=$Configdir --copy-back --target-dir=$fullbackupdir
+#
+# But Mariadb Version 10.2 >
+# Full Backup Restore
+# 1. mariabackup --defaults-file=$Configdir --prepare --target-dir=$fullbackupdir
+# 2. mariabackup --defaults-file=$Configdir --copy-back --target-dir=$fullbackupdir
+#
+# Incremental Backup Restore:
+# 1. mariabackup --defaults-file=$Configdir --prepare --apply-log-only --target-dir=$fullbackupdir
+# 2. mariabackup --defaults-file=$Configdir --prepare --apply-log-only --target-dir=$fullbackupdir --incremental-dir=$incbakcupdir
+# 3. mariabackup --defaults-file=$Configdir --copy-back --target-dir=$fullbackupdir
+#
+# This Backup Script Base Database Version : 10.3
+# so, Script Support Version MariaDB 10.3.+
+#
+ 
+# Connect
+dbUser=
+dbPass=
+dbSocket=/tmp/mysql.sock
+privUser=
+ 
+# Path
+mysqlPath=
+configPath=$mysqlPath/my.cnf
+backupPath=/backup
+backupName=DBBACKUP
+logPath=/log/backup_log
+parallelCore=4
+runDiv=
+ 
+ 
+# Check Directory
+if [ ! -d $backupPath ]; then
+    echo 'Check Backup Path.'
+    exit
+fi
+ 
+if [ ! -d $logPath ]; then
+    echo 'Check Backup Log Path.'
+    exit
+fi
+ 
+if [ ! -e $configPath ]; then
+    echo 'Check MySQL Configure.'
+    exit
+fi
+ 
+# Backup Function
+function fullBackup()
+{
+    $mysqlPath/bin/mariabackup --defaults-file=$configPath \
+    --user=$dbUser --password=$dbPass \
+    --slave-info \
+    --backup \
+    --parallel=$parallelCore \
+    --target-dir=$backupPath/$1$2/ > $logPath/$1_$todays.log 2>&1
+}
+ 
+function incBackup()
+{
+    $mysqlPath/bin/mariabackup --defaults-file=$configPath \
+    --user=$dbUser --password=$dbPass \
+    --slave-info \
+    --backup \
+    --parallel=$parallelCore \
+    --incremental-basedir=$backupPath/$1$3 \
+    --target-dir=$backupPath/$1$2/ > $logPath/$1_$todays.log 2>&1
+}
+ 
+# Backup
+case $runDiv in
+    prod )
+        # Production Full + inc Backup
+        todays=$(LANG=C date +%Y%m%d)
+        days=$(LANG=C date +%a)
+        daysNo=$(LANG=C date +%w)
+        baseDaysNo=`expr $daysNo - 1`
+ 
+        case $days in
+            Sun )
+                rm -rf $backupPath/$backupName*
+                fullBackup $backupName $daysNo
+            ;;
+            Mon | Tue | Wed | Thu | Fri | Sat )
+                incBackup $backupName $daysNo $baseDaysNo
+            ;;
+        esac
+    ;;
+    dev )
+        # Dev Backup
+        case $1 in
+            full )
+                todays=0
+                rm -rf $backupPath/$backupName*
+                fullBackup $backupName 0
+            ;;
+            inc )
+                inc=`expr $2 + 1`
+                todays=$inc
+                incBackup $backupName $inc $2
+            ;;
+            * )
+                echo 'full : isebackup full'
+                echo 'inc : isebackup inc basedirNo'
+                exit 0
+            ;;
+        esac
+    ;;
+    * )
+        echo 'runDiv Option Error.'
+        exit 0
+    ;;
+esac
+ 
+# Priv Set
+/bin/chown -R $privUser.$privUser $backupPath
