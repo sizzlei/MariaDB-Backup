@@ -1,6 +1,11 @@
 # MariaDB-Backup
 xtrabackup 툴을 사용하거나, MariaBackup 툴을 사용하는 경우 full backup 과 incremental 백업을 할수 있는 스크립트
 
+## User
+<code>
+GRANT RELOAD, PROCESS, SUPER, LOCK TABLES, REPLICATION CLIENT, CREATE TABLESPACE ON *.* TO 'backupUser'@'localhost' IDENTIFIED BY '';
+</code>
+
 ## Configure 
 + dbUser
   - 백업 사용 계정(Database 접근 계정)
